@@ -1,0 +1,12 @@
+config.json
+venv/
+__pycache__/
+*.pyc
+
+# Artefacts de build (PyInstaller, Inno Setup) — reconstruits à partir des sources,
+# jamais commités. Voir README.md pour les reconstruire, ou la page Releases GitHub
+# pour l'installeur déjà compilé.
+build/
+dist/
+installer_output/
+*.spec
