@@ -92,6 +92,16 @@ actions en plus :
   si tu cliquais toi-même dans le client. Un bouton "Annuler" apparaît pendant que la
   recherche est en cours.
 
+## Suivre la partie en direct depuis ton téléphone
+
+Une fois en jeu (chargement terminé), la page "Sélection de champion" affiche : le
+chrono, les deux équipes (champion, niveau, KDA, CS, objets, mort/respawn), ton or actuel,
+et l'historique des objectifs pris (dragon, héraut, baron, tourelles, inhibiteurs) avec
+l'heure et l'équipe. Uniquement des faits confirmés par le jeu — **pas** de compte à
+rebours de prochain objectif ni de cooldown de sort adverse : Riot ne fournit ni l'un ni
+l'autre de façon fiable par cette API, les deviner reviendrait à afficher un chiffre faux
+présenté comme sûr.
+
 Comme pour le champ select, c'est protégé par le même token — sans lui, personne
 d'autre sur le Wi-Fi ne peut lancer une recherche de partie ou le client à ta place.
 
@@ -151,6 +161,8 @@ Produit `installer_output\GameDetectorLol-Setup.exe`.
 - `POST /client/launch`, `GET /lobby`, `POST /lobby/search`, `POST /lobby/cancel` —
   lancement du client et recherche de partie.
 - `POST /readycheck/accept`, `POST /readycheck/decline` — ready check.
+- `GET /livegame` — état de la partie en cours (joueurs, items, niveau, KDA, CS,
+  événements objectifs) une fois en jeu et le chargement terminé.
 
 Tous sauf `/status` et `/pairing` exigent soit le token partagé (`remote_token`), soit
 d'être appelés depuis ce PC.

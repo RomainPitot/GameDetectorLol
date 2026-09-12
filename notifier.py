@@ -23,6 +23,8 @@ Endpoints, aussi pilotables depuis le même réseau Wi-Fi (pas besoin d'être su
 - POST /lobby/cancel           — annule la recherche de partie en cours.
 - POST /readycheck/accept      — accepte la partie trouvée (ready check).
 - POST /readycheck/decline      — refuse la partie trouvée (ready check).
+- GET  /livegame               — état de la partie en cours (joueurs, items, niveau,
+                                 KDA, CS, événements objectifs) une fois en jeu.
 Tous sauf /status et /pairing exigent soit le token partagé (REMOTE_TOKEN), soit d'être
 appelés depuis ce PC — pour qu'un inconnu sur le même Wi-Fi (café, LAN party) ne puisse
 pas te faire ban/pick, lancer une recherche de partie, etc. à ta place.
@@ -126,6 +128,17 @@ RETRY_INTERVAL_SECONDS = 10
 # API locale du jeu (pas du client) — n'existe que pendant qu'une partie tourne, et ne
 # répond qu'une fois le chargement du joueur local terminé.
 LIVE_CLIENT_URL = "https://127.0.0.1:2999/liveclientdata/gamestats"
+# Même API, tout le détail de la partie en cours (joueurs, items, scores, événements) —
+# voir get_live_game_data.
+LIVE_CLIENT_ALLDATA_URL = "https://127.0.0.1:2999/liveclientdata/allgamedata"
+
+# Événements de la Live Client Data à remonter au site — uniquement des prises
+# d'objectifs/structures, jamais les kills de champions un par un (bruit, pas l'objet du
+# mode "en jeu"). Pas de timer prédictif de prochain spawn ici : les intervalles
+# (respawn dragon/baron, apparition du héraut...) changent trop souvent d'une saison à
+# l'autre pour être codés en dur sans risquer d'afficher un faux compte à rebours —
+# seulement les faits déjà arrivés, comme dans le client.
+LIVE_OBJECTIVE_EVENTS = {"DragonKill", "BaronKill", "HeraldKill", "TurretKilled", "InhibKilled"}
 
 # Port du petit serveur de statut local (voir STATUS ci-dessous). Choisi au hasard dans
 # la plage "user ports" pour limiter le risque de collision avec autre chose sur ta machine.
@@ -294,6 +307,79 @@ def is_game_loaded() -> bool:
         return resp.status_code == 200
     except requests.RequestException:
         return False
+
+
+def get_live_game_data() -> dict | None:
+    """Données de la partie en cours depuis l'API locale du JEU (port 2999) — None si la
+    partie n'est pas en cours ou si le chargement local n'est pas terminé (connexion
+    refusée dans ce cas, pas une erreur). Réduit aux champs utiles côté téléphone/site :
+    jamais l'or ou les stats détaillées des ADVERSAIRES — Riot ne les expose pas du tout
+    par cette API (seulement pour ton propre joueur, activePlayer), ce n'est pas une
+    restriction ajoutée ici."""
+    try:
+        resp = requests.get(LIVE_CLIENT_ALLDATA_URL, verify=False, timeout=3)
+    except requests.RequestException:
+        return None
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+
+    game = data.get("gameData", {}) or {}
+    active = data.get("activePlayer", {}) or {}
+
+    players = []
+    team_by_name = {}
+    for p in data.get("allPlayers", []) or []:
+        name = p.get("riotIdGameName") or p.get("summonerName") or ""
+        team = p.get("team")
+        team_by_name[name] = team
+        scores = p.get("scores", {}) or {}
+        spells = p.get("summonerSpells", {}) or {}
+        players.append({
+            "summonerName": name,
+            "champion": p.get("championName"),
+            "team": team,
+            "level": p.get("level"),
+            "kills": scores.get("kills", 0),
+            "deaths": scores.get("deaths", 0),
+            "assists": scores.get("assists", 0),
+            "cs": scores.get("creepScore", 0),
+            "wardScore": scores.get("wardScore", 0),
+            "isDead": bool(p.get("isDead")),
+            "respawnTimer": p.get("respawnTimer", 0),
+            "items": [
+                {"id": it.get("itemID"), "name": it.get("displayName"), "count": it.get("count", 1)}
+                for it in (p.get("items") or [])
+            ],
+            "summonerSpells": [
+                spells.get("summonerSpellOne", {}).get("displayName"),
+                spells.get("summonerSpellTwo", {}).get("displayName"),
+            ],
+        })
+
+    # Team résolue depuis allPlayers (par nom) : Live Client Data ne met pas l'équipe
+    # directement sur l'événement, seulement le nom de qui a fait l'action.
+    events = []
+    for e in (data.get("events", {}) or {}).get("Events", []) or []:
+        name = e.get("EventName")
+        if name not in LIVE_OBJECTIVE_EVENTS:
+            continue
+        killer = e.get("KillerName", "")
+        events.append({
+            "type": name,
+            "time": e.get("EventTime", 0),
+            "team": team_by_name.get(killer),
+            "detail": e.get("DragonType") or e.get("TurretKilled") or e.get("InhibKilled"),
+            "stolen": bool(e.get("Stolen")),
+        })
+
+    return {
+        "gameTime": game.get("gameTime", 0),
+        "gameMode": game.get("gameMode"),
+        "activePlayerGold": active.get("currentGold"),
+        "players": players,
+        "objectiveEvents": events,
+    }
 
 
 class LcuNotConnected(Exception):
@@ -482,6 +568,16 @@ class StatusHandler(BaseHTTPRequestHandler):
                 self._send_json(409, {"error": str(e)})
                 return
             self._send_json(200, {"pages": resp.json()})
+            return
+
+        if parsed.path == "/livegame":
+            if not self._check_token():
+                return
+            live = get_live_game_data()
+            if live is None:
+                self._send_json(409, {"error": "Pas en jeu, ou chargement pas encore terminé."})
+                return
+            self._send_json(200, live)
             return
 
         if parsed.path == "/lobby":
