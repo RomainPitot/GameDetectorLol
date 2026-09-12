@@ -9,7 +9,7 @@
 ; Nécessite dist\GameDetectorLol.exe déjà construit (voir README.md — PyInstaller).
 
 #define MyAppName "GameDetectorLol"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Romain Pitot"
 #define MyAppURL "https://romainpitot.github.io/lol-climb-tracker/"
 #define MyAppExeName "GameDetectorLol.exe"
